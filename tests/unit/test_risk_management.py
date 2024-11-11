@@ -168,3 +168,24 @@ class TestRiskManagement:
         assert isinstance(adjusted_size, float)
         assert adjusted_size > 0
         assert adjusted_size <= base_position_size * self.config.MAX_POSITION_MULTIPLIER
+
+    def test_portfolio_correlation(self, setup):
+        """Test portfolio correlation risk"""
+        positions = [
+            {'pair': 'BTC/USDT', 'size': 0.1, 'entry_price': 50000},
+            {'pair': 'ETH/USDT', 'size': 1.0, 'entry_price': 3000}
+        ]
+        
+        correlation = self.risk_manager.calculate_position_correlation(positions)
+        assert -1 <= correlation <= 1
+        assert correlation != 0  # Crypto pairs typically have correlation
+
+    def test_risk_limits_extreme_conditions(self, setup):
+        """Test risk limits under extreme market conditions"""
+        # Test with high volatility
+        volatile_market = create_test_market_data(volatility_factor=3.0)
+        size = self.risk_manager.adjust_position_size_for_volatility(
+            base_size=0.1,
+            market_data=volatile_market
+        )
+        assert size < 0.1  # Should reduce position size in high volatility
