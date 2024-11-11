@@ -1,5 +1,3 @@
-# File: src/core/market_analysis/regime_detector.py
-# This enhances your existing market_regime.py
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -12,6 +10,7 @@ from sklearn.preprocessing import StandardScaler
 
 from .condition_analyzer import MarketConditionAnalyzer, MarketCondition
 from .regime_transitions import RegimeTransitionManager
+from .deep_feature_extractor import EnhancedFeatureExtractor, DeepFeatures
 
 @dataclass
 class MarketRegime:
@@ -33,10 +32,20 @@ class EnhancedRegimeDetector:
         self.regime_clusters = {}
         self.current_regime = None
         self.scaler = StandardScaler()
+         self.feature_extractor = EnhancedFeatureExtractor(config)
         
     async def detect_regime(self, market_data: pd.DataFrame) -> MarketRegime:
         """Detect current market regime using multiple indicators and ML"""
         try:
+             # Extract deep features
+            deep_features = self.feature_extractor.extract_features(market_data)
+            
+            # Analyze market conditions
+            condition = await self.condition_analyzer.analyze(market_data)
+            
+            # Combine traditional and deep features
+            features = self._combine_features(condition, deep_features)
+            
             # Analyze market conditions
             condition = await self.condition_analyzer.analyze(market_data)
             
@@ -306,3 +315,23 @@ def _update_regime_history(self, regime: MarketRegime):
             
     except Exception as e:
         logging.error(f"Regime history update error: {str(e)}")
+
+def _combine_features(self, 
+                         condition: MarketCondition,
+                         deep_features: DeepFeatures) -> np.ndarray:
+        """Combine traditional and deep features"""
+        try:
+            traditional_features = self._create_feature_vector(condition)
+            
+            combined = np.concatenate([
+                traditional_features,
+                deep_features.temporal_patterns,
+                deep_features.market_structure,
+                deep_features.regime_indicators
+            ], axis=1)
+            
+            return self.scaler.fit_transform(combined)
+            
+        except Exception as e:
+            logging.error(f"Feature combination error: {str(e)}")
+            raise
