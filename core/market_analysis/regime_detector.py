@@ -45,9 +45,6 @@ class EnhancedRegimeDetector:
             # Combine traditional and deep features
             features = self._combine_features(condition, deep_features)
             
-            # Generate feature vector
-            features = self._create_feature_vector(condition)
-            
             # Detect regime using clustering
             regime_name, confidence = self._cluster_regime(features)
             
