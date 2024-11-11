@@ -39,7 +39,59 @@ class StrategyManager:
         self.regime_performance = {}
         self.optimization_queue = asyncio.Queue()
         self.executor = ThreadPoolExecutor(max_workers=4)
-        
+
+        async def _handle_regime_transition(self, old_regime: 'MarketRegime', new_regime: 'MarketRegime'):
+        """Handle transition between market regimes"""
+        try:
+            # Get transition characteristics
+            transition = await self.regime_manager.analyze_transition(
+                old_regime,
+                new_regime
+            )
+            
+            # Adjust active strategies
+            await self._adjust_strategies_for_transition(transition)
+            
+            # Update performance tracking
+            self._update_regime_performance(old_regime, new_regime)
+            
+            # Queue strategy optimization if needed
+            if transition['significance'] > self.config.TRANSITION_THRESHOLD:
+                await self._queue_strategy_optimization(new_regime)
+                
+        except Exception as e:
+            logging.error(f"Regime transition handling error: {str(e)}")
+            raise
+            
+    async def _adjust_strategies_for_transition(self, transition: Dict):
+        """Adjust strategies based on regime transition"""
+        try:
+            for strategy_name, strategy in self.active_strategies.items():
+                # Check if strategy is optimized for new regime
+                if not self._is_strategy_regime_compatible(
+                    strategy,
+                    transition['to_regime']
+                ):
+                    # Gradually reduce exposure
+                    await self._reduce_strategy_exposure(
+                        strategy_name,
+                        transition['smoothness']
+                    )
+                    
+                # Update strategy parameters
+                new_params = self._get_regime_specific_parameters(
+                    strategy_name,
+                    transition['to_regime']
+                )
+                await self._update_strategy_parameters(
+                    strategy_name,
+                    new_params
+                )
+                
+        except Exception as e:
+            logging.error(f"Strategy adjustment error: {str(e)}")
+            raise
+            
     async def initialize_strategies(self):
         """Initialize strategy pool"""
         try:
