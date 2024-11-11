@@ -1,33 +1,23 @@
-# File: src/core/performance_analytics.py
+# src/core/performance_analytics.py
 
 from typing import Dict, List, Optional
-from dataclasses import dataclass, field
 from datetime import datetime
-import numpy as np
-import pandas as pd
 import logging
-from .metrics.metrics_system import MetricsCollector, PerformanceMetrics
-from .market_analysis.regime_detector import MarketRegime
+import numpy as np
+from dataclasses import dataclass
+from .metrics.metrics_system import MetricsCollector, PerformanceMetrics, SystemMetrics, StrategyMetrics
 
 @dataclass
-class RegimePerformanceSnapshot:
-    """Snapshot of performance during a specific regime"""
+class RegimePerformanceMetrics:
+    """Regime-specific performance metrics"""
     regime_name: str
     start_time: datetime
     end_time: datetime
-    metrics: PerformanceMetrics
-    strategy_performance: Dict[str, float]
-    risk_metrics: Dict[str, float]
-    transition_metrics: Dict[str, float] = field(default_factory=dict)
-
-@dataclass
-class StrategyRegimeStats:
-    """Statistics for strategy performance in specific regime"""
-    success_rate: float = 0.0
-    risk_adjusted_return: float = 0.0
-    avg_trade_duration: float = 0.0
-    profit_factor: float = 0.0
-    regime_correlation: float = 0.0
+    performance: PerformanceMetrics
+    strategy_metrics: Dict[str, StrategyMetrics]
+    transition_impact: float = 0.0
+    stability_score: float = 0.0
+    regime_duration: float = 0.0
 
 class PerformanceAnalytics:
     """Advanced performance analytics with regime-specific tracking"""
@@ -35,239 +25,216 @@ class PerformanceAnalytics:
     def __init__(self, config):
         self.config = config
         self.metrics_collector = MetricsCollector(config)
-        self.regime_performance: Dict[str, List[RegimePerformanceSnapshot]] = {}
-        self.strategy_regime_stats: Dict[str, Dict[str, StrategyRegimeStats]] = {}
-        self.transition_stats: Dict[str, Dict[str, float]] = {}
+        self.regime_history: List[RegimePerformanceMetrics] = []
+        self.current_regime: Optional[RegimePerformanceMetrics] = None
         self.logger = logging.getLogger(__name__)
         
     async def analyze_performance(self,
                                 trading_data: Dict,
                                 system_state: Dict,
-                                current_regime: Optional[MarketRegime] = None) -> Dict:
+                                current_regime: str) -> Dict:
         """Analyze system performance comprehensively"""
         try:
-            # Update base metrics through MetricsCollector
+            # Update base metrics using existing collector
             await self.metrics_collector.update_performance_metrics(trading_data)
             await self.metrics_collector.update_system_metrics(system_state)
             
-            # Get current performance snapshot
-            metrics = self.metrics_collector.get_metrics_summary()
+            # Get regime-specific analysis
+            regime_metrics = await self._analyze_regime_performance(
+                trading_data,
+                system_state,
+                current_regime
+            )
             
-            # If regime is provided, update regime-specific metrics
-            if current_regime:
-                await self._update_regime_metrics(current_regime, trading_data, metrics)
+            # Combine all metrics
+            metrics_summary = self.metrics_collector.get_metrics_summary()
+            metrics_summary['regime'] = regime_metrics
             
-            # Generate analytics and recommendations
-            analytics = {
-                'metrics': metrics,
-                'patterns': await self._analyze_patterns(trading_data, metrics),
-                'regime_analytics': await self._analyze_regime_performance() if current_regime else None,
-                'recommendations': await self._generate_recommendations(metrics, current_regime)
+            return {
+                'metrics': metrics_summary,
+                'patterns': await self._analyze_patterns(trading_data, current_regime),
+                'optimizations': await self._generate_optimizations(metrics_summary),
+                'recommendations': self._generate_recommendations(metrics_summary)
             }
-            
-            return analytics
             
         except Exception as e:
             self.logger.error(f"Performance analysis error: {str(e)}")
             raise
             
-    async def _update_regime_metrics(self,
-                                   regime: MarketRegime,
-                                   trading_data: Dict,
-                                   metrics: Dict):
-        """Update regime-specific performance metrics"""
+    async def _analyze_regime_performance(self,
+                                        trading_data: Dict,
+                                        system_state: Dict,
+                                        regime_name: str) -> Dict:
+        """Analyze performance specific to current market regime"""
         try:
-            # Create performance snapshot
-            snapshot = RegimePerformanceSnapshot(
-                regime_name=regime.name,
-                start_time=trading_data.get('start_time', datetime.now()),
-                end_time=trading_data.get('end_time', datetime.now()),
-                metrics=metrics['performance'],
-                strategy_performance=self._extract_strategy_performance(metrics),
-                risk_metrics=self._calculate_regime_risk_metrics(regime, trading_data),
-                transition_metrics=self._get_transition_metrics(regime)
-            )
+            # Create new regime metrics if regime changed
+            if not self.current_regime or self.current_regime.regime_name != regime_name:
+                if self.current_regime:
+                    self.current_regime.end_time = datetime.now()
+                    self.regime_history.append(self.current_regime)
+                
+                self.current_regime = RegimePerformanceMetrics(
+                    regime_name=regime_name,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    performance=PerformanceMetrics(),
+                    strategy_metrics={}
+                )
             
-            # Update regime performance history
-            if regime.name not in self.regime_performance:
-                self.regime_performance[regime.name] = []
-            self.regime_performance[regime.name].append(snapshot)
-            
-            # Update strategy-regime statistics
-            await self._update_strategy_regime_stats(regime.name, snapshot)
-            
-        except Exception as e:
-            self.logger.error(f"Regime metrics update error: {str(e)}")
-    
-    def _extract_strategy_performance(self, metrics: Dict) -> Dict[str, float]:
-        """Extract strategy-specific performance from metrics"""
-        return {
-            name: stats['risk_adjusted_return']
-            for name, stats in metrics.get('strategies', {}).items()
-        }
-    
-    def _calculate_regime_risk_metrics(self, regime: MarketRegime, trading_data: Dict) -> Dict[str, float]:
-        """Calculate risk metrics specific to the regime"""
-        try:
-            trades = trading_data.get('trades', [])
-            returns = [t['pnl'] for t in trades]
+            # Update regime-specific metrics
+            self._update_regime_metrics(trading_data, system_state)
             
             return {
-                'volatility': np.std(returns) if returns else 0.0,
-                'var_95': np.percentile(returns, 5) if returns else 0.0,
-                'expected_shortfall': np.mean([r for r in returns if r < 0]) if returns else 0.0,
-                'regime_stability': regime.confidence
+                'current': self._get_regime_summary(self.current_regime),
+                'history': self._get_regime_history_summary(),
+                'transitions': self._analyze_regime_transitions()
             }
-        except Exception as e:
-            self.logger.error(f"Risk metrics calculation error: {str(e)}")
-            return {}
-    
-    def _get_transition_metrics(self, regime: MarketRegime) -> Dict[str, float]:
-        """Get metrics related to regime transitions"""
-        if not self.transition_stats:
-            return {}
-            
-        return self.transition_stats.get(regime.name, {})
-    
-    async def _update_strategy_regime_stats(self, regime_name: str, snapshot: RegimePerformanceSnapshot):
-        """Update statistics for strategy performance in specific regime"""
-        try:
-            for strategy_name, performance in snapshot.strategy_performance.items():
-                if strategy_name not in self.strategy_regime_stats:
-                    self.strategy_regime_stats[strategy_name] = {}
-                
-                if regime_name not in self.strategy_regime_stats[strategy_name]:
-                    self.strategy_regime_stats[strategy_name][regime_name] = StrategyRegimeStats()
-                
-                stats = self.strategy_regime_stats[strategy_name][regime_name]
-                
-                # Update stats using exponential moving average
-                alpha = 0.3  # Smoothing factor
-                stats.risk_adjusted_return = (
-                    (1 - alpha) * stats.risk_adjusted_return +
-                    alpha * performance
-                )
-                
-                # Update regime correlation
-                stats.regime_correlation = self._calculate_regime_correlation(
-                    strategy_name,
-                    regime_name
-                )
-                
-        except Exception as e:
-            self.logger.error(f"Strategy regime stats update error: {str(e)}")
-    
-    async def _analyze_patterns(self, trading_data: Dict, metrics: Dict) -> Dict:
-        """Analyze performance patterns"""
-        try:
-            return {
-                'trend': self._detect_performance_trend(metrics),
-                'anomalies': self._detect_anomalies(metrics),
-                'correlations': self._analyze_correlations(trading_data)
-            }
-        except Exception as e:
-            self.logger.error(f"Pattern analysis error: {str(e)}")
-            return {}
-    
-    async def _analyze_regime_performance(self) -> Dict:
-        """Analyze performance across different regimes"""
-        try:
-            regime_analytics = {}
-            for regime_name, snapshots in self.regime_performance.items():
-                if not snapshots:
-                    continue
-                
-                regime_analytics[regime_name] = {
-                    'overall_performance': self._calculate_regime_overall_performance(snapshots),
-                    'best_strategies': self._identify_best_strategies(regime_name),
-                    'risk_profile': self._analyze_regime_risk_profile(snapshots),
-                    'stability': self._analyze_regime_stability(snapshots)
-                }
-            
-            return regime_analytics
             
         except Exception as e:
             self.logger.error(f"Regime performance analysis error: {str(e)}")
             return {}
     
-    def _calculate_regime_correlation(self, strategy_name: str, regime_name: str) -> float:
-        """Calculate correlation between strategy performance and regime"""
+    def _update_regime_metrics(self, trading_data: Dict, system_state: Dict):
+        """Update metrics for current regime"""
         try:
-            if regime_name not in self.regime_performance:
-                return 0.0
+            if not self.current_regime:
+                return
                 
-            snapshots = self.regime_performance[regime_name]
-            if not snapshots:
-                return 0.0
-                
-            performances = [
-                s.strategy_performance.get(strategy_name, 0.0)
-                for s in snapshots
-            ]
+            # Update duration
+            self.current_regime.regime_duration = (
+                datetime.now() - self.current_regime.start_time
+            ).total_seconds() / 3600  # Convert to hours
             
-            return np.corrcoef(performances, [1] * len(performances))[0, 1]
+            # Calculate regime stability
+            self.current_regime.stability_score = self._calculate_regime_stability(
+                trading_data,
+                system_state
+            )
+            
+            # Update strategy metrics for current regime
+            for strategy_name, strategy_data in trading_data.get('strategies', {}).items():
+                if strategy_name not in self.current_regime.strategy_metrics:
+                    self.current_regime.strategy_metrics[strategy_name] = StrategyMetrics()
+                
+                # Update strategy metrics
+                strategy_metrics = self.current_regime.strategy_metrics[strategy_name]
+                self._update_strategy_regime_metrics(strategy_metrics, strategy_data)
+                
+        except Exception as e:
+            self.logger.error(f"Regime metrics update error: {str(e)}")
+    
+    def _calculate_regime_stability(self, trading_data: Dict, system_state: Dict) -> float:
+        """Calculate stability score for current regime"""
+        try:
+            # Factors contributing to stability:
+            # 1. Consistency of strategy performance
+            # 2. Market condition stability
+            # 3. System performance stability
+            
+            strategy_stability = self._calculate_strategy_stability(trading_data)
+            market_stability = self._calculate_market_stability(trading_data)
+            system_stability = self._calculate_system_stability(system_state)
+            
+            # Weighted average of stability factors
+            weights = [0.4, 0.4, 0.2]  # Adjustable weights
+            stability = np.average(
+                [strategy_stability, market_stability, system_stability],
+                weights=weights
+            )
+            
+            return float(stability)
             
         except Exception as e:
-            self.logger.error(f"Correlation calculation error: {str(e)}")
+            self.logger.error(f"Stability calculation error: {str(e)}")
             return 0.0
     
-    async def _generate_recommendations(self, 
-                                     metrics: Dict,
-                                     current_regime: Optional[MarketRegime]) -> List[str]:
-        """Generate performance improvement recommendations"""
-        recommendations = []
-        
-        try:
-            # System performance recommendations
-            system_metrics = metrics.get('system', {})
-            if system_metrics.get('avg_latency', 0) > self.config.LATENCY_THRESHOLD:
-                recommendations.append(
-                    "High latency detected. Consider optimizing execution pipeline."
-                )
-            
-            # Strategy recommendations
-            if current_regime:
-                best_strategies = self._identify_best_strategies(current_regime.name)
-                if best_strategies:
-                    recommendations.append(
-                        f"Consider increasing allocation to {best_strategies[0]} "
-                        f"in {current_regime.name} regime."
-                    )
-            
-            # Risk recommendations
-            risk_metrics = metrics.get('performance', {})
-            if risk_metrics.get('max_drawdown', 0) > self.config.MAX_DRAWDOWN_THRESHOLD:
-                recommendations.append(
-                    "Maximum drawdown exceeded threshold. Review risk management parameters."
-                )
-            
-        except Exception as e:
-            self.logger.error(f"Recommendations generation error: {str(e)}")
-        
-        return recommendations
+    def _get_regime_summary(self, regime: RegimePerformanceMetrics) -> Dict:
+        """Get summary of regime performance"""
+        return {
+            'name': regime.regime_name,
+            'duration_hours': regime.regime_duration,
+            'stability': regime.stability_score,
+            'performance': {
+                'total_return': regime.performance.total_return,
+                'sharpe_ratio': regime.performance.sharpe_ratio,
+                'max_drawdown': regime.performance.max_drawdown,
+                'win_rate': regime.performance.win_rate
+            },
+            'strategies': {
+                name: self._get_strategy_regime_summary(metrics)
+                for name, metrics in regime.strategy_metrics.items()
+            }
+        }
     
-    def _identify_best_strategies(self, regime_name: str) -> List[str]:
-        """Identify best performing strategies for a regime"""
+    def _get_strategy_regime_summary(self, metrics: StrategyMetrics) -> Dict:
+        """Get summary of strategy performance in regime"""
+        return {
+            'success_rate': metrics.successful_trades / max(1, metrics.successful_trades + metrics.failed_trades),
+            'risk_adjusted_return': metrics.risk_adjusted_return,
+            'signals_accuracy': metrics.signals_executed / max(1, metrics.signals_generated)
+        }
+    
+    async def _analyze_patterns(self, trading_data: Dict, current_regime: str) -> Dict:
+        """Analyze performance patterns"""
         try:
-            strategy_scores = []
-            for strategy_name, regime_stats in self.strategy_regime_stats.items():
-                if regime_name in regime_stats:
-                    stats = regime_stats[regime_name]
-                    score = (
-                        stats.risk_adjusted_return * 0.4 +
-                        stats.success_rate * 0.3 +
-                        stats.regime_correlation * 0.3
-                    )
-                    strategy_scores.append((strategy_name, score))
+            # Analyze regime-specific patterns
+            regime_patterns = self._analyze_regime_patterns(current_regime)
             
-            return [
-                name for name, _ in sorted(
-                    strategy_scores,
-                    key=lambda x: x[1],
-                    reverse=True
-                )
-            ]
+            # Analyze strategy adaptation patterns
+            strategy_patterns = self._analyze_strategy_patterns(trading_data)
+            
+            return {
+                'regime_patterns': regime_patterns,
+                'strategy_patterns': strategy_patterns
+            }
             
         except Exception as e:
-            self.logger.error(f"Best strategies identification error: {str(e)}")
+            self.logger.error(f"Pattern analysis error: {str(e)}")
+            return {}
+    
+    async def _generate_optimizations(self, metrics_summary: Dict) -> Dict:
+        """Generate optimization recommendations"""
+        try:
+            regime_optimizations = self._generate_regime_optimizations(
+                metrics_summary['regime']
+            )
+            
+            strategy_optimizations = self._generate_strategy_optimizations(
+                metrics_summary['strategies']
+            )
+            
+            return {
+                'regime_optimizations': regime_optimizations,
+                'strategy_optimizations': strategy_optimizations
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Optimization generation error: {str(e)}")
+            return {}
+    
+    def _generate_recommendations(self, metrics_summary: Dict) -> List[str]:
+        """Generate actionable recommendations"""
+        try:
+            recommendations = []
+            
+            # Analyze regime performance
+            regime_metrics = metrics_summary.get('regime', {})
+            if regime_metrics:
+                if regime_metrics.get('stability', 0) < 0.5:
+                    recommendations.append(
+                        "Consider adjusting regime detection parameters for better stability"
+                    )
+            
+            # Analyze strategy performance
+            strategies = metrics_summary.get('strategies', {})
+            for strategy_name, metrics in strategies.items():
+                if metrics.get('success_rate', 0) < 0.4:
+                    recommendations.append(
+                        f"Review {strategy_name} parameters for current regime"
+                    )
+            
+            return recommendations
+            
+        except Exception as e:
+            self.logger.error(f"Recommendation generation error: {str(e)}")
             return []
