@@ -7,7 +7,6 @@ from datetime import datetime
 import logging
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
-
 from .condition_analyzer import MarketConditionAnalyzer, MarketCondition
 from .regime_transitions import RegimeTransitionManager
 from .deep_feature_extractor import EnhancedFeatureExtractor, DeepFeatures
@@ -32,7 +31,7 @@ class EnhancedRegimeDetector:
         self.regime_clusters = {}
         self.current_regime = None
         self.scaler = StandardScaler()
-         self.feature_extractor = EnhancedFeatureExtractor(config)
+        self.feature_extractor = EnhancedFeatureExtractor(config)
         
     async def detect_regime(self, market_data: pd.DataFrame) -> MarketRegime:
         """Detect current market regime using multiple indicators and ML"""
@@ -45,9 +44,6 @@ class EnhancedRegimeDetector:
             
             # Combine traditional and deep features
             features = self._combine_features(condition, deep_features)
-            
-            # Analyze market conditions
-            condition = await self.condition_analyzer.analyze(market_data)
             
             # Generate feature vector
             features = self._create_feature_vector(condition)
