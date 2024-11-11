@@ -82,14 +82,23 @@ class BaseStrategy(ABC):
             # Adjust signal strength based on regime confidence
             filtered_signals['strength'] *= regime.confidence
             
-            # Adjust position size based on regime risk profile
-            position_size = signals.get('position_size', 1.0)
-            risk_factor = regime.risk_profile.get('risk_factor', 1.0)
-            filtered_signals['position_size'] = position_size * risk_factor
+            # Apply regime-specific position sizing
+            position_size = self._calculate_regime_position_size(
+                signals.get('position_size', 1.0),
+                regime
+            )
+            filtered_signals['position_size'] = position_size
             
             # Add regime-specific stop loss and take profit
-            filtered_signals['stop_loss'] = regime.risk_profile.get('stop_loss')
-            filtered_signals['take_profit'] = regime.risk_profile.get('take_profit')
+            risk_levels = self._calculate_regime_risk_levels(regime)
+            filtered_signals.update(risk_levels)
+            
+            # Add regime transition protection
+            if self._is_regime_transition_period(regime):
+                filtered_signals = self._add_transition_protection(
+                    filtered_signals,
+                    regime
+                )
             
             return filtered_signals
             
@@ -144,6 +153,35 @@ class BaseStrategy(ABC):
         except Exception as e:
             logging.error(f"Performance calculation error in {self.name}: {str(e)}")
             return {}
+            
+        def _calculate_regime_position_size(self,
+                                     base_size: float,
+                                     regime: MarketRegime) -> float:
+        """Calculate position size based on regime characteristics"""
+        try:
+            # Get base risk factor from regime
+            risk_factor = regime.risk_profile.get('risk_factor', 1.0)
+            
+            # Adjust for regime stability
+            stability_factor = regime.condition.regime_stability
+            
+            # Adjust for market efficiency
+            efficiency_factor = regime.condition.efficiency_ratio
+            
+            # Calculate final position size
+            position_size = base_size * risk_factor * stability_factor * efficiency_factor
+            
+            # Apply regime-specific limits
+            position_size = min(
+                position_size,
+                self.config.get(f'max_position_size_{regime.name}', 1.0)
+            )
+            
+            return position_size
+            
+        except Exception as e:
+            logging.error(f"Position size calculation error: {str(e)}")
+            return base_size        
     
     def _calculate_sharpe_ratio(self, returns: List[float], risk_free_rate: float = 0.0) -> float:
         """Calculate Sharpe ratio"""
