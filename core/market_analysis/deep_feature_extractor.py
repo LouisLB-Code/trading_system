@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Tuple, List
 from dataclasses import dataclass
+from sklearn.preprocessing import StandardScaler
 
 @dataclass
 class DeepFeatures:
@@ -122,3 +123,36 @@ class EnhancedFeatureExtractor:
         except Exception as e:
             logging.error(f"Feature preparation error: {str(e)}")
             raise
+
+def _calculate_returns(self, market_data: pd.DataFrame) -> np.ndarray:
+    """Calculate return-based features"""
+    returns = market_data['close'].pct_change().fillna(0)
+    return np.column_stack([
+        returns,
+        returns.rolling(5).mean(),
+        returns.rolling(5).std()
+    ])
+
+def _calculate_volatility_features(self, market_data: pd.DataFrame) -> np.ndarray:
+    """Calculate volatility-based features"""
+    log_returns = np.log(market_data['close'] / market_data['close'].shift(1)).fillna(0)
+    return np.column_stack([
+        log_returns.rolling(10).std(),
+        np.abs(market_data['high'] - market_data['low']) / market_data['close']
+    ])
+
+def _calculate_volume_features(self, market_data: pd.DataFrame) -> np.ndarray:
+    """Calculate volume-based features"""
+    volume = market_data['volume']
+    return np.column_stack([
+        volume / volume.rolling(10).mean(),
+        (volume * market_data['close']).rolling(5).mean()
+    ])
+
+def _calculate_technical_features(self, market_data: pd.DataFrame) -> np.ndarray:
+    """Calculate technical indicators"""
+    close = market_data['close']
+    return np.column_stack([
+        close.rolling(14).mean() / close - 1,  # MA ratio
+        (close - close.rolling(14).min()) / (close.rolling(14).max() - close.rolling(14).min())  # Stochastic
+    ])
