@@ -115,9 +115,7 @@ class AdaptiveStrategyGenerator:
             logging.error(f"Pattern analysis error: {str(e)}")
             raise
     
-    async def _generate_strategy_template(self,
-                                       patterns: Dict,
-                                       regime: 'MarketRegime') -> StrategyTemplate:
+    async def _generate_strategy_template(self, patterns: Dict, regime: 'MarketRegime') -> StrategyTemplate:
         """Generate strategy template based on patterns"""
         try:
             # Select indicators based on patterns
@@ -139,19 +137,61 @@ class AdaptiveStrategyGenerator:
             risk_parameters = self._generate_risk_parameters(
                 patterns,
                 regime
+             # Select indicators optimized for current regime
+            indicators = self._select_regime_specific_indicators(patterns, regime)
+            
+            # Generate regime-optimized entry conditions
+            entry_conditions = self._generate_regime_entry_conditions(
+                patterns,
+                regime
             )
             
-            return StrategyTemplate(
+            # Generate regime-optimized exit conditions
+            exit_conditions = self._generate_regime_exit_conditions(
+                patterns,
+                regime
+            )
+            
+            # Define risk parameters based on regime
+            risk_parameters = self._generate_regime_risk_parameters(
+                patterns,
+                regime
+            )
+            
+            template = StrategyTemplate(
                 indicators=indicators,
                 entry_conditions=entry_conditions,
                 exit_conditions=exit_conditions,
                 risk_parameters=risk_parameters,
-                timeframes=self._select_timeframes(patterns)
+                timeframes=self._select_regime_timeframes(patterns, regime)
             )
+            
+            # Add regime-specific metadata
+            template.regime_optimized = True
+            template.target_regime = regime.name
+            template.regime_confidence = regime.confidence
+            
+            return template
             
         except Exception as e:
             logging.error(f"Template generation error: {str(e)}")
             raise
+            
+     def _select_regime_specific_indicators(self, patterns: Dict, regime: 'MarketRegime') -> List[str]:
+        """Select indicators that perform best in the current regime"""
+        indicators = []
+        
+        if regime.name == 'trending':
+            indicators.extend(['ADX', 'MACD', 'Directional Movement'])
+        elif regime.name == 'mean_reverting':
+            indicators.extend(['RSI', 'Bollinger Bands', 'Stochastic'])
+        elif regime.name == 'volatile':
+            indicators.extend(['ATR', 'Volatility Bands', 'Keltner Channels'])
+        
+        # Add regime-independent indicators
+        indicators.extend(['Volume', 'Price Action'])
+        
+        return indicators           
     
     async def _implement_strategy(self, template: StrategyTemplate) -> 'BaseStrategy':
         """Create concrete strategy implementation from template"""
