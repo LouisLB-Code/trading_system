@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading_system"
+version = "0.1.0"
+description = "A trading system for cryptocurrency markets"
+authors = [
+    {name = "LouisLB-Code", email = "your.email@example.com"}
+]
+dependencies = [
+    "pandas",
+    "numpy",
+    "pytest>=7.0",
+    "pytest-asyncio",
+    "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests"
+]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = [
+    "unit: mark test as a unit test",
+    "integration: mark test as an integration test",
+    "backtest: mark test as a backtest",
+    "performance: mark test as a performance test"
+]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:"
+]
